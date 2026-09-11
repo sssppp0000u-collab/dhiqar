@@ -1,4 +1,4 @@
-name: Build Cyber MyHD APK Clean
+name: Build Cyber MyHD Root Fixed
 
 on:
   push:
@@ -19,29 +19,38 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-
-    - name: Unzip Project Files If Needed
+    - name: Extract & Move Project to Root Directory
       run: |
         sudo apt-get update && sudo apt-get install -y unzip
+        
+        # 1. فك ضغط الملفات إن وجدت
         for f in *.zip; do
           [ -e "$f" ] || continue
           unzip -o "$f" -d extracted_app || true
         done
-        if [ -d "extracted_app" ]; then
-          cp -rn extracted_app/*/. . 2>/dev/null || cp -rn extracted_app/* . 2>/dev/null || true
+
+        # 2. البحث عن المجلد الحقيقي للمشروع ونقله للجذر
+        REAL_ROOT=$(find . -maxdepth 4 -name "settings.gradle" -o -name "settings.gradle.kts" -o -name "build.gradle" | head -n 1 | xargs dirname)
+
+        if [ -n "$REAL_ROOT" ] && [ "$REAL_ROOT" != "." ]; then
+          echo "Moving files from $REAL_ROOT to root directory..."
+          cp -r "$REAL_ROOT"/* . 2>/dev/null || true
         fi
 
-    - name: Fix Gradle Repositories & Inject MyHD
+        # 3. إنشاء ملف settings.gradle في الجذر إذا كان مفقوداً
+        if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
+          echo "include ':app'" > settings.gradle
+        fi
+
+    - name: Inject MyHD Subscription & Cyber Theme
       run: |
-        cat << 'EOF' > fix_and_patch.py
+        cat << 'EOF' > patch.py
         import glob, os, re
 
         PIN = "2027"
         MYHD = "356288617436"
 
-        # 1. Inject MyHD Code & Cyber Theme
+        # ربط الرمز 2027 باشتراك MyHD
         for p in glob.glob("**/*.java", recursive=True) + glob.glob("**/*.kt", recursive=True):
             if "build/" in p: continue
             try:
@@ -53,45 +62,30 @@ jobs:
                         r'\1\n        if (\2 != null && (\2.trim().equals("' + PIN + '") || \2.trim().contains("' + PIN + '"))) { \2 = "' + MYHD + '"; }',
                         txt
                     )
-                    with open(p, "w", encoding="utf-8") as f:
-                        f.write(txt)
+                    with open(p, "w", encoding="utf-8") as f: f.write(txt)
             except: pass
 
+        # تطبيق ثيم النيون Cyber
         colors = '<?xml version="1.0" encoding="utf-8"?><resources><color name="colorPrimary">#00F0FF</color><color name="colorPrimaryDark">#030508</color><color name="colorAccent">#00FF66</color><color name="backgroundColor">#020305</color><color name="cardBg">#0A0F1D</color><color name="textColorPrimary">#FFFFFF</color><color name="textColorSecondary">#00FF66</color></resources>'
         for c in glob.glob("**/res/values/colors.xml", recursive=True):
             if "build/" not in c:
                 try: open(c, "w", encoding="utf-8").write(colors)
                 except: pass
-
-        # 2. Fix Gradle Plugins and Repositories
-        for g in glob.glob("**/*.gradle*", recursive=True):
-            if "build/" in g: continue
-            try:
-                with open(g, "r", encoding="utf-8", errors="ignore") as f:
-                    content = f.read()
-                if "repositories {" in content and "google()" not in content:
-                    content = content.replace("repositories {", "repositories {\n        google()\n        mavenCentral()\n        gradlePluginPortal()\n")
-                    with open(g, "w", encoding="utf-8") as f:
-                        f.write(content)
-            except: pass
         EOF
-        python3 fix_and_patch.py
+        python3 patch.py
 
-    - name: Grant Permission
+    - name: Ensure Gradle Wrapper Exists
       run: |
-        find . -name "gradlew" -exec chmod +x {} \;
+        if [ ! -f "./gradlew" ]; then
+          gradle wrapper --gradle-version 8.5
+        fi
+        chmod +x gradlew
 
     - name: Build Debug APK
       run: |
-        GRADLE_BIN=$(find . -name "gradlew" | head -n 1)
-        if [ -n "$GRADLE_BIN" ]; then
-          cd $(dirname "$GRADLE_BIN")
-          ./gradlew assembleDebug --no-daemon --stacktrace
-        else
-          gradle assembleDebug --no-daemon --stacktrace
-        fi
+        ./gradlew assembleDebug --no-daemon --stacktrace
 
-    - name: Upload APK
+    - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: DHIQAR-TV-FINAL
