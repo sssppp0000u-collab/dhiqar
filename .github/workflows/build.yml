@@ -1,4 +1,4 @@
-name: Build Android APK (Dhiqar TV Cyber-Sat Complete)
+name: Build Android APK
 
 on:
   push:
@@ -19,140 +19,98 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+
     - name: Extract Project Files
       run: |
-        if ls *.zip 1> /dev/null 2>&1; then
-          unzip -o *.zip || true
-        fi
+        unzip -o *.zip || true
         if [ -d "DHIQAR-TV-V4-PRO" ]; then
           cp -rn DHIQAR-TV-V4-PRO/* . || true
         fi
 
-    - name: Run Cyber Patch Script
+    - name: Apply Safe Cyber Patches
       run: |
-        cat << 'EOF' > patch.py
-        import glob, re, os
+        python3 -c "
+        import glob, re
 
         PIN_CODE = '2027'
         SERVER_URL = 'http://vod4k.cc:80'
 
-        # 1. Inject Auto-Login PIN 2027 + Cyber Sound Beep
-        source_files = glob.glob('**/*.java', recursive=True) + glob.glob('**/*.kt', recursive=True)
-        for path in source_files:
+        # 1. PIN Auto-login logic
+        for path in glob.glob('**/*.java', recursive=True) + glob.glob('**/*.kt', recursive=True):
             if 'build/' in path: continue
             try:
                 with open(path, 'r', encoding='utf-8', errors='ignore') as f:
                     code = f.read()
-
                 if 'getText()' in code or 'toString()' in code:
                     new_code = re.sub(
                         r'(String\s+([a-zA-Z0-9_]+)\s*=\s*[^;]*getText\(\)\.toString\(\)[^;]*;)',
-                        r'\1\n        if (\2 != null && (\2.trim().equals("' + PIN_CODE + '") || \2.trim().contains("' + PIN_CODE + '"))) { \2 = "' + SERVER_URL + '"; try { android.media.ToneGenerator tg = new android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 100); tg.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 150); } catch(Exception e){} }',
+                        r'\1\n        if (\2 != null && (\2.trim().equals(\"' + PIN_CODE + '\") || \2.trim().contains(\"' + PIN_CODE + '\"))) { \2 = \"' + SERVER_URL + '\"; }',
                         code
                     )
                     if new_code != code:
                         with open(path, 'w', encoding='utf-8') as f:
                             f.write(new_code)
-                        print(f"Patched PIN logic in {path}")
-            except Exception as e:
-                print(f"Error patching {path}: {e}")
+            except Exception:
+                pass
 
-        # 2. Inject ExoPlayer 16:9 Fullscreen Mode
-        for path in source_files:
+        # 2. Player Fullscreen 16:9
+        for path in glob.glob('**/*.java', recursive=True) + glob.glob('**/*.kt', recursive=True):
             if 'build/' in path: continue
             try:
                 with open(path, 'r', encoding='utf-8', errors='ignore') as f:
                     pcode = f.read()
-                if 'ExoPlayer' in pcode or 'PlayerView' in pcode:
-                    if 'RESIZE_MODE_FILL' not in pcode and 'playerView.setPlayer' in pcode:
-                        pcode = pcode.replace(
-                            'playerView.setPlayer',
-                            'playerView.setResizeMode(com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL);\n        playerView.setPlayer'
-                        )
-                        with open(path, 'w', encoding='utf-8') as f:
-                            f.write(pcode)
-                        print(f"Patched ExoPlayer scaling in {path}")
-            except Exception as e:
-                print(f"Error player in {path}: {e}")
+                if ('ExoPlayer' in pcode or 'PlayerView' in pcode) and 'RESIZE_MODE_FILL' not in pcode and 'playerView.setPlayer' in pcode:
+                    pcode = pcode.replace('playerView.setPlayer', 'playerView.setResizeMode(com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL);\n        playerView.setPlayer')
+                    with open(path, 'w', encoding='utf-8') as f:
+                        f.write(pcode)
+            except Exception:
+                pass
 
-        # 3. Create Extended Cyber Neon Palette in colors.xml
-        colors_paths = glob.glob('**/res/values/colors.xml', recursive=True)
-        cyber_colors = """<?xml version="1.0" encoding="utf-8"?>
+        # 3. Cyber Neon Colors
+        cyber_colors = '''<?xml version=\"1.0\" encoding=\"utf-8\"?>
         <resources>
-            <color name="colorPrimary">#00F0FF</color>
-            <color name="colorPrimaryDark">#030508</color>
-            <color name="colorAccent">#00FF66</color>
-            <color name="backgroundColor">#020305</color>
-            <color name="cardBg">#0A0F1D</color>
-            <color name="cardBgFocused">#002B3D</color>
-            <color name="textColorPrimary">#FFFFFF</color>
-            <color name="textColorSecondary">#00FF66</color>
-            <color name="neonCyan">#00F0FF</color>
-            <color name="neonGreen">#00FF66</color>
-            <color name="neonPurple">#B000FF</color>
-            <color name="neonGold">#FFD700</color>
-            <color name="neonRed">#FF3344</color>
-            <color name="signalMeter">#00F0FF</color>
-            <color name="qualityMeter">#00FF66</color>
-        </resources>
-        """
-        for cpath in colors_paths:
+            <color name=\"colorPrimary\">#00F0FF</color>
+            <color name=\"colorPrimaryDark\">#030508</color>
+            <color name=\"colorAccent\">#00FF66</color>
+            <color name=\"backgroundColor\">#020305</color>
+            <color name=\"cardBg\">#0A0F1D</color>
+            <color name=\"cardBgFocused\">#002B3D</color>
+            <color name=\"textColorPrimary\">#FFFFFF</color>
+            <color name=\"textColorSecondary\">#00FF66</color>
+            <color name=\"neonCyan\">#00F0FF</color>
+            <color name=\"neonGreen\">#00FF66</color>
+        </resources>'''
+        for cpath in glob.glob('**/res/values/colors.xml', recursive=True):
             if 'build/' in cpath: continue
             try:
                 with open(cpath, 'w', encoding='utf-8') as f:
                     f.write(cyber_colors)
-                print(f"Updated colors in {cpath}")
-            except Exception as e:
-                print(f"Error colors in {cpath}: {e}")
+            except Exception:
+                pass
 
-        # 4. Patch Layout XMLs safely
-        layouts = glob.glob('**/res/layout/*.xml', recursive=True)
-        for path in layouts:
-            if 'build/' in path: continue
-            try:
-                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                    lcontent = f.read()
-
-                lcontent = re.sub(r'android:textSize="1[0-4]sp"', 'android:textSize="18sp"', lcontent)
-                lcontent = re.sub(r'android:textSize="1[5-8]sp"', 'android:textSize="22sp"', lcontent)
-
-                if '<ImageView' in lcontent and 'scaleType' not in lcontent:
-                    lcontent = re.sub(
-                        r'(<ImageView[^>]*?)(/?>)',
-                        r'\1 android:adjustViewBounds="true" android:scaleType="fitCenter"\2',
-                        lcontent
-                    )
-
-                with open(path, 'w', encoding='utf-8') as f:
-                    f.write(lcontent)
-            except Exception as e:
-                print(f"Error layout {path}: {e}")
-
-        # 5. Manifest Landscape & RTL Auto Config
-        manifests = glob.glob('**/AndroidManifest.xml', recursive=True)
-        for mpath in manifests:
+        # 4. Manifest Orientation & RTL
+        for mpath in glob.glob('**/AndroidManifest.xml', recursive=True):
             if 'build/' in mpath: continue
             try:
                 with open(mpath, 'r', encoding='utf-8', errors='ignore') as f:
                     mcontent = f.read()
                 if 'supportsRtl' not in mcontent and '<application' in mcontent:
-                    mcontent = mcontent.replace('<application', '<application android:supportsRtl="true"', 1)
+                    mcontent = mcontent.replace('<application', '<application android:supportsRtl=\"true\"', 1)
                 if 'screenOrientation' not in mcontent and '<activity' in mcontent:
-                    mcontent = mcontent.replace('<activity', '<activity android:screenOrientation="sensorLandscape" android:configChanges="orientation|keyboardHidden|screenSize"', 1)
+                    mcontent = mcontent.replace('<activity', '<activity android:screenOrientation=\"sensorLandscape\" android:configChanges=\"orientation|keyboardHidden|screenSize\"', 1)
                 with open(mpath, 'w', encoding='utf-8') as f:
                     f.write(mcontent)
-                print(f"Patched manifest in {mpath}")
-            except Exception as e:
-                print(f"Error manifest {mpath}: {e}")
-
-        EOF
-        python3 patch.py
+            except Exception:
+                pass
+        "
 
     - name: Build Debug APK
       run: |
         if [ -f "./gradlew" ]; then
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
         else
           gradle assembleDebug
         fi
