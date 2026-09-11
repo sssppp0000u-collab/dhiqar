@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK (Cyber-Sat Fix)
 
 on:
   push:
@@ -24,51 +24,19 @@ jobs:
 
     - name: Extract Project Files
       run: |
-        unzip -o *.zip || true
+        if ls *.zip 1> /dev/null 2>&1; then
+          unzip -o *.zip || true
+        fi
         if [ -d "DHIQAR-TV-V4-PRO" ]; then
           cp -rn DHIQAR-TV-V4-PRO/* . || true
         fi
 
-    - name: Apply Safe Cyber Patches
+    - name: Apply Safe Cyber Styling & Layout Updates
       run: |
         python3 -c "
-        import glob, re
+        import glob, os
 
-        PIN_CODE = '2027'
-        SERVER_URL = 'http://vod4k.cc:80'
-
-        # 1. PIN Auto-login logic
-        for path in glob.glob('**/*.java', recursive=True) + glob.glob('**/*.kt', recursive=True):
-            if 'build/' in path: continue
-            try:
-                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                    code = f.read()
-                if 'getText()' in code or 'toString()' in code:
-                    new_code = re.sub(
-                        r'(String\s+([a-zA-Z0-9_]+)\s*=\s*[^;]*getText\(\)\.toString\(\)[^;]*;)',
-                        r'\1\n        if (\2 != null && (\2.trim().equals(\"' + PIN_CODE + '\") || \2.trim().contains(\"' + PIN_CODE + '\"))) { \2 = \"' + SERVER_URL + '\"; }',
-                        code
-                    )
-                    if new_code != code:
-                        with open(path, 'w', encoding='utf-8') as f:
-                            f.write(new_code)
-            except Exception:
-                pass
-
-        # 2. Player Fullscreen 16:9
-        for path in glob.glob('**/*.java', recursive=True) + glob.glob('**/*.kt', recursive=True):
-            if 'build/' in path: continue
-            try:
-                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                    pcode = f.read()
-                if ('ExoPlayer' in pcode or 'PlayerView' in pcode) and 'RESIZE_MODE_FILL' not in pcode and 'playerView.setPlayer' in pcode:
-                    pcode = pcode.replace('playerView.setPlayer', 'playerView.setResizeMode(com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL);\n        playerView.setPlayer')
-                    with open(path, 'w', encoding='utf-8') as f:
-                        f.write(pcode)
-            except Exception:
-                pass
-
-        # 3. Cyber Neon Colors
+        # 1. Safe Cyber Neon Palette Injection
         cyber_colors = '''<?xml version=\"1.0\" encoding=\"utf-8\"?>
         <resources>
             <color name=\"colorPrimary\">#00F0FF</color>
@@ -82,41 +50,45 @@ jobs:
             <color name=\"neonCyan\">#00F0FF</color>
             <color name=\"neonGreen\">#00FF66</color>
         </resources>'''
+
         for cpath in glob.glob('**/res/values/colors.xml', recursive=True):
             if 'build/' in cpath: continue
             try:
                 with open(cpath, 'w', encoding='utf-8') as f:
                     f.write(cyber_colors)
-            except Exception:
-                pass
+            except Exception as e:
+                print(e)
 
-        # 4. Manifest Orientation & RTL
+        # 2. Safe Manifest Adjustments (Landscape & RTL)
         for mpath in glob.glob('**/AndroidManifest.xml', recursive=True):
             if 'build/' in mpath: continue
             try:
                 with open(mpath, 'r', encoding='utf-8', errors='ignore') as f:
-                    mcontent = f.read()
-                if 'supportsRtl' not in mcontent and '<application' in mcontent:
-                    mcontent = mcontent.replace('<application', '<application android:supportsRtl=\"true\"', 1)
-                if 'screenOrientation' not in mcontent and '<activity' in mcontent:
-                    mcontent = mcontent.replace('<activity', '<activity android:screenOrientation=\"sensorLandscape\" android:configChanges=\"orientation|keyboardHidden|screenSize\"', 1)
+                    content = f.read()
+                if '<application' in content and 'supportsRtl' not in content:
+                    content = content.replace('<application', '<application android:supportsRtl=\"true\"', 1)
+                if '<activity' in content and 'screenOrientation' not in content:
+                    content = content.replace('<activity', '<activity android:screenOrientation=\"sensorLandscape\" android:configChanges=\"orientation|keyboardHidden|screenSize\"', 1)
                 with open(mpath, 'w', encoding='utf-8') as f:
-                    f.write(mcontent)
-            except Exception:
-                pass
+                    f.write(content)
+            except Exception as e:
+                print(e)
         "
+
+    - name: Ensure Executable Permissions
+      run: |
+        find . -name "gradlew" -exec chmod +x {} \;
 
     - name: Build Debug APK
       run: |
         if [ -f "./gradlew" ]; then
-          chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
         else
           gradle assembleDebug
         fi
 
-    - name: Upload APK
+    - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: DHIQAR-TV-v4-CYBER-COMPLETE
+        name: DHIQAR-TV-CYBER-PRO
         path: "**/build/outputs/apk/debug/*.apk"
