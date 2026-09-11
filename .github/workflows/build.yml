@@ -1,4 +1,4 @@
-name: Universal Build Android APK
+name: Build Cyber Pro APK
 
 on:
   push:
@@ -33,21 +33,64 @@ jobs:
           cp -rn extracted_app/*/. . 2>/dev/null || cp -rn extracted_app/* . 2>/dev/null || true
         fi
 
-    - name: Apply Cyber Theme & Layout Customizations
-        # ... (جميع أكواد البايثون لتعديل الألوان والخطوط والكبر والأفقية)
+    - name: Apply Cyber Theme Layout
+      run: |
+        python3 -c "
+        import glob, re
 
-    - name: Execute Build (Fail-safe Mode)
+        cyber_colors = '''<?xml version=\"1.0\" encoding=\"utf-8\"?>
+        <resources>
+            <color name=\"colorPrimary\">#00F0FF</color>
+            <color name=\"colorPrimaryDark\">#030508</color>
+            <color name=\"colorAccent\">#00FF66</color>
+            <color name=\"backgroundColor\">#020305</color>
+            <color name=\"cardBg\">#0A0F1D</color>
+            <color name=\"cardBgFocused\">#002B3D</color>
+            <color name=\"textColorPrimary\">#FFFFFF</color>
+            <color name=\"textColorSecondary\">#00FF66</color>
+            <color name=\"neonCyan\">#00F0FF</color>
+            <color name=\"neonGreen\">#00FF66</color>
+        </resources>'''
+        
+        for c in glob.glob('**/res/values/colors.xml', recursive=True):
+            if 'build/' not in c:
+                try:
+                    open(c, 'w', encoding='utf-8').write(cyber_colors)
+                except:
+                    pass
+
+        for m in glob.glob('**/AndroidManifest.xml', recursive=True):
+            if 'build/' not in m:
+                try:
+                    txt = open(m, 'r', encoding='utf-8', errors='ignore').read()
+                    if '<application' in txt and 'supportsRtl' not in txt:
+                        txt = txt.replace('<application', '<application android:supportsRtl=\"true\"', 1)
+                    if '<activity' in txt and 'screenOrientation' not in txt:
+                        txt = txt.replace('<activity', '<activity android:screenOrientation=\"sensorLandscape\" android:configChanges=\"orientation|keyboardHidden|screenSize\"', 1)
+                    open(m, 'w', encoding='utf-8').write(txt)
+                except:
+                    pass
+
+        for l in glob.glob('**/res/layout/*.xml', recursive=True):
+            if 'build/' not in l:
+                try:
+                    lcontent = open(l, 'r', encoding='utf-8', errors='ignore').read()
+                    lcontent = re.sub(r'android:textSize=\"1[0-4]sp\"', 'android:textSize=\"18sp\"', lcontent)
+                    lcontent = re.sub(r'android:textSize=\"1[5-8]sp\"', 'android:textSize=\"22sp\"', lcontent)
+                    open(l, 'w', encoding='utf-8').write(lcontent)
+                except:
+                    pass
+        "
+
+    - name: Build APK
       run: |
         find . -name "gradlew" -exec chmod +x {} \;
-        
         GRADLE_BIN=$(find . -name "gradlew" | head -n 1)
         if [ -n "$GRADLE_BIN" ]; then
           DIR=$(dirname "$GRADLE_BIN")
-          echo "Building using local gradlew in $DIR"
           cd "$DIR"
           ./gradlew assembleDebug --no-daemon
         else
-          echo "Local gradlew not found, using system Gradle..."
           gradle assembleDebug --no-daemon
         fi
 
