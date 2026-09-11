@@ -1,4 +1,4 @@
-name: Build Android APK (Sat-View Hacker Ultra Pro)
+name: Build Android APK (Dhiqar TV Cyber-Sat Complete)
 
 on:
   push:
@@ -19,101 +19,134 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
-
-    - name: Extract Project ZIP
+    - name: Extract Project Files
       run: |
-        unzip -o DHIQAR-TV-V4-PRO.zip
+        if ls *.zip 1> /dev/null 2>&1; then
+          unzip -o *.zip || true
+        fi
         if [ -d "DHIQAR-TV-V4-PRO" ]; then
           cp -rn DHIQAR-TV-V4-PRO/* . || true
         fi
 
-    - name: Apply Ultra Cyber SAT-VIEW Enhancements & Features
+    - name: Run Cyber Patch Script
       run: |
-        python3 -c "
+        cat << 'EOF' > patch.py
         import glob, re, os
 
         PIN_CODE = '2027'
         SERVER_URL = 'http://vod4k.cc:80'
-        USERNAME = '2142771292105495'
-        PASSWORD = '2142771292105495'
 
-        # 1. Inject Auto Login with Sound Effect & PIN 2027
+        # 1. Inject Auto-Login PIN 2027 + Cyber Sound Beep
         source_files = glob.glob('**/*.java', recursive=True) + glob.glob('**/*.kt', recursive=True)
         for path in source_files:
             if 'build/' in path: continue
-            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                code = f.read()
+            try:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    code = f.read()
 
-            # PIN Auto Replace
-            if 'getText()' in code or 'toString()' in code:
-                new_code = re.sub(
-                    r'(String\s+([a-zA-Z0-9_]+)\s*=\s*[^;]*getText\(\)\.toString\(\)[^;]*;)',
-                    rf'\1\n        if (\2 != null && (\2.trim().equals(\"{PIN_CODE}\") || \2.trim().contains(\"{PIN_CODE}\"))) {{ \2 = \"{SERVER_URL}\"; android.media.ToneGenerator tg = new android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 100); tg.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 150); }}',
-                    code
-                )
-                if new_code != code:
-                    with open(path, 'w', encoding='utf-8') as f:
-                        f.write(new_code)
+                if 'getText()' in code or 'toString()' in code:
+                    new_code = re.sub(
+                        r'(String\s+([a-zA-Z0-9_]+)\s*=\s*[^;]*getText\(\)\.toString\(\)[^;]*;)',
+                        r'\1\n        if (\2 != null && (\2.trim().equals("' + PIN_CODE + '") || \2.trim().contains("' + PIN_CODE + '"))) { \2 = "' + SERVER_URL + '"; try { android.media.ToneGenerator tg = new android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 100); tg.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 150); } catch(Exception e){} }',
+                        code
+                    )
+                    if new_code != code:
+                        with open(path, 'w', encoding='utf-8') as f:
+                            f.write(new_code)
+                        print(f"Patched PIN logic in {path}")
+            except Exception as e:
+                print(f"Error patching {path}: {e}")
 
-        # 2. Inject Fast-Zapping Buffering & Fullscreen Mode to ExoPlayer
+        # 2. Inject ExoPlayer 16:9 Fullscreen Mode
         for path in source_files:
             if 'build/' in path: continue
-            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                pcode = f.read()
-            if 'ExoPlayer' in pcode or 'PlayerView' in pcode:
-                if 'RESIZE_MODE_FILL' not in pcode:
-                    pcode = pcode.replace(
-                        'playerView.setPlayer',
-                        'playerView.setResizeMode(com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL);\n        playerView.setPlayer'
-                    )
-                    with open(path, 'w', encoding='utf-8') as f:
-                        f.write(pcode)
+            try:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    pcode = f.read()
+                if 'ExoPlayer' in pcode or 'PlayerView' in pcode:
+                    if 'RESIZE_MODE_FILL' not in pcode and 'playerView.setPlayer' in pcode:
+                        pcode = pcode.replace(
+                            'playerView.setPlayer',
+                            'playerView.setResizeMode(com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL);\n        playerView.setPlayer'
+                        )
+                        with open(path, 'w', encoding='utf-8') as f:
+                            f.write(pcode)
+                        print(f"Patched ExoPlayer scaling in {path}")
+            except Exception as e:
+                print(f"Error player in {path}: {e}")
 
-        # 3. Inject Cyberpunk Colors (OLED Black, Hacker Green, Cyber Cyan)
+        # 3. Create Extended Cyber Neon Palette in colors.xml
         colors_paths = glob.glob('**/res/values/colors.xml', recursive=True)
-        cyber_colors = '''<?xml version=\"1.0\" encoding=\"utf-8\"?>
+        cyber_colors = """<?xml version="1.0" encoding="utf-8"?>
         <resources>
-            <color name=\"colorPrimary\">#00F0FF</color>
-            <color name=\"colorPrimaryDark\">#08090C</color>
-            <color name=\"colorAccent\">#00FF66</color>
-            <color name=\"backgroundColor\">#050608</color>
-            <color name=\"cardBg\">#0E1118</color>
-            <color name=\"textColorPrimary\">#FFFFFF</color>
-            <color name=\"textColorSecondary\">#00FF66</color>
+            <color name="colorPrimary">#00F0FF</color>
+            <color name="colorPrimaryDark">#030508</color>
+            <color name="colorAccent">#00FF66</color>
+            <color name="backgroundColor">#020305</color>
+            <color name="cardBg">#0A0F1D</color>
+            <color name="cardBgFocused">#002B3D</color>
+            <color name="textColorPrimary">#FFFFFF</color>
+            <color name="textColorSecondary">#00FF66</color>
+            <color name="neonCyan">#00F0FF</color>
+            <color name="neonGreen">#00FF66</color>
+            <color name="neonPurple">#B000FF</color>
+            <color name="neonGold">#FFD700</color>
+            <color name="neonRed">#FF3344</color>
+            <color name="signalMeter">#00F0FF</color>
+            <color name="qualityMeter">#00FF66</color>
         </resources>
-        '''
+        """
         for cpath in colors_paths:
-            with open(cpath, 'w', encoding='utf-8') as f:
-                f.write(cyber_colors)
+            if 'build/' in cpath: continue
+            try:
+                with open(cpath, 'w', encoding='utf-8') as f:
+                    f.write(cyber_colors)
+                print(f"Updated colors in {cpath}")
+            except Exception as e:
+                print(f"Error colors in {cpath}: {e}")
 
-        # 4. Enforce Landscape Orientation and Full RTL Support
-        manifests = glob.glob('**/AndroidManifest.xml', recursive=True)
-        for mpath in manifests:
-            with open(mpath, 'r', encoding='utf-8') as f:
-                mcontent = f.read()
-            if 'supportsRtl' not in mcontent:
-                mcontent = mcontent.replace('<application', '<application android:supportsRtl=\"true\"', 1)
-            if 'screenOrientation' not in mcontent:
-                mcontent = mcontent.replace('<activity', '<activity android:screenOrientation=\"sensorLandscape\" android:configChanges=\"orientation|keyboardHidden|screenSize\"', 1)
-            with open(mpath, 'w', encoding='utf-8') as f:
-                f.write(mcontent)
-
-        # 5. Fix Image Aspect Ratio and Logo Scaling
+        # 4. Patch Layout XMLs safely
         layouts = glob.glob('**/res/layout/*.xml', recursive=True)
         for path in layouts:
-            with open(path, 'r', encoding='utf-8') as f:
-                lcontent = f.read()
-            if '<ImageView' in lcontent:
-                lcontent = re.sub(
-                    r'(<ImageView[^>]*?)(/?>)',
-                    lambda m: m.group(1) + (' android:adjustViewBounds=\"true\" android:scaleType=\"fitCenter\"' if 'scaleType' not in m.group(1) else '') + m.group(2),
-                    lcontent
-                )
+            if 'build/' in path: continue
+            try:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    lcontent = f.read()
+
+                lcontent = re.sub(r'android:textSize="1[0-4]sp"', 'android:textSize="18sp"', lcontent)
+                lcontent = re.sub(r'android:textSize="1[5-8]sp"', 'android:textSize="22sp"', lcontent)
+
+                if '<ImageView' in lcontent and 'scaleType' not in lcontent:
+                    lcontent = re.sub(
+                        r'(<ImageView[^>]*?)(/?>)',
+                        r'\1 android:adjustViewBounds="true" android:scaleType="fitCenter"\2',
+                        lcontent
+                    )
+
                 with open(path, 'w', encoding='utf-8') as f:
                     f.write(lcontent)
-        "
+            except Exception as e:
+                print(f"Error layout {path}: {e}")
+
+        # 5. Manifest Landscape & RTL Auto Config
+        manifests = glob.glob('**/AndroidManifest.xml', recursive=True)
+        for mpath in manifests:
+            if 'build/' in mpath: continue
+            try:
+                with open(mpath, 'r', encoding='utf-8', errors='ignore') as f:
+                    mcontent = f.read()
+                if 'supportsRtl' not in mcontent and '<application' in mcontent:
+                    mcontent = mcontent.replace('<application', '<application android:supportsRtl="true"', 1)
+                if 'screenOrientation' not in mcontent and '<activity' in mcontent:
+                    mcontent = mcontent.replace('<activity', '<activity android:screenOrientation="sensorLandscape" android:configChanges="orientation|keyboardHidden|screenSize"', 1)
+                with open(mpath, 'w', encoding='utf-8') as f:
+                    f.write(mcontent)
+                print(f"Patched manifest in {mpath}")
+            except Exception as e:
+                print(f"Error manifest {mpath}: {e}")
+
+        EOF
+        python3 patch.py
 
     - name: Build Debug APK
       run: |
@@ -127,5 +160,5 @@ jobs:
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: DHIQAR-TV-v4-SAT-ULTRA
+        name: DHIQAR-TV-v4-CYBER-COMPLETE
         path: "**/build/outputs/apk/debug/*.apk"
