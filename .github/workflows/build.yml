@@ -1,4 +1,4 @@
-name: Build Android APK (Cyber-Sat Fix)
+name: Build Android APK (Stable JDK 11)
 
 on:
   push:
@@ -13,14 +13,14 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Set up JDK 17
+    - name: Set up JDK 11 (IPTV Compatible)
       uses: actions/setup-java@v4
       with:
-        java-version: '17'
+        java-version: '11'
         distribution: 'temurin'
 
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
 
     - name: Extract Project Files
       run: |
@@ -31,64 +31,20 @@ jobs:
           cp -rn DHIQAR-TV-V4-PRO/* . || true
         fi
 
-    - name: Apply Safe Cyber Styling & Layout Updates
+    - name: Grant Execute Permission for Gradlew
       run: |
-        python3 -c "
-        import glob, os
-
-        # 1. Safe Cyber Neon Palette Injection
-        cyber_colors = '''<?xml version=\"1.0\" encoding=\"utf-8\"?>
-        <resources>
-            <color name=\"colorPrimary\">#00F0FF</color>
-            <color name=\"colorPrimaryDark\">#030508</color>
-            <color name=\"colorAccent\">#00FF66</color>
-            <color name=\"backgroundColor\">#020305</color>
-            <color name=\"cardBg\">#0A0F1D</color>
-            <color name=\"cardBgFocused\">#002B3D</color>
-            <color name=\"textColorPrimary\">#FFFFFF</color>
-            <color name=\"textColorSecondary\">#00FF66</color>
-            <color name=\"neonCyan\">#00F0FF</color>
-            <color name=\"neonGreen\">#00FF66</color>
-        </resources>'''
-
-        for cpath in glob.glob('**/res/values/colors.xml', recursive=True):
-            if 'build/' in cpath: continue
-            try:
-                with open(cpath, 'w', encoding='utf-8') as f:
-                    f.write(cyber_colors)
-            except Exception as e:
-                print(e)
-
-        # 2. Safe Manifest Adjustments (Landscape & RTL)
-        for mpath in glob.glob('**/AndroidManifest.xml', recursive=True):
-            if 'build/' in mpath: continue
-            try:
-                with open(mpath, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
-                if '<application' in content and 'supportsRtl' not in content:
-                    content = content.replace('<application', '<application android:supportsRtl=\"true\"', 1)
-                if '<activity' in content and 'screenOrientation' not in content:
-                    content = content.replace('<activity', '<activity android:screenOrientation=\"sensorLandscape\" android:configChanges=\"orientation|keyboardHidden|screenSize\"', 1)
-                with open(mpath, 'w', encoding='utf-8') as f:
-                    f.write(content)
-            except Exception as e:
-                print(e)
-        "
-
-    - name: Ensure Executable Permissions
-      run: |
-        find . -name "gradlew" -exec chmod +x {} \;
+        chmod +x gradlew || true
 
     - name: Build Debug APK
       run: |
         if [ -f "./gradlew" ]; then
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --stacktrace
         else
-          gradle assembleDebug
+          gradle assembleDebug --stacktrace
         fi
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: DHIQAR-TV-CYBER-PRO
+        name: DHIQAR-TV-v4-FINAL
         path: "**/build/outputs/apk/debug/*.apk"
