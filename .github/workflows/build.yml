@@ -1,4 +1,4 @@
-name: Auto Build APK
+name: Universal Build Android APK
 
 on:
   push:
@@ -19,33 +19,40 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Find and Build Project
-      run: |
-        echo "البحث عن الملف المضغوط وفك ضغطه..."
-        for z in *.zip; do
-          if [ -f "$z" ]; then
-            unzip -o "$z" || true
-          fi
-        done
-        
-        echo "البحث عن ملف البناء (gradlew)..."
-        GRADLEW_PATH=$(find . -name "gradlew" -type f | head -n 1)
-        
-        if [ -z "$GRADLEW_PATH" ]; then
-          echo "❌ لم يتم العثور على ملف gradlew! تأكد من أن ملفات المشروع مرفوعة بشكل صحيح."
-          exit 1
-        fi
-        
-        PROJECT_DIR=$(dirname "$GRADLEW_PATH")
-        echo "📂 تم العثور على المشروع في: $PROJECT_DIR"
-        cd "$PROJECT_DIR"
-        
-        chmod +x gradlew
-        ./gradlew assembleDebug
+    - name: Setup Gradle Environment
+      uses: gradle/actions/setup-gradle@v3
 
-    - name: Upload APK
+    - name: Unzip & Prepare Project Files
+      run: |
+        sudo apt-get update && sudo apt-get install -y unzip
+        for f in *.zip; do
+          [ -e "$f" ] || continue
+          unzip -o "$f" -d extracted_app || true
+        done
+        if [ -d "extracted_app" ]; then
+          cp -rn extracted_app/*/. . 2>/dev/null || cp -rn extracted_app/* . 2>/dev/null || true
+        fi
+
+    - name: Apply Cyber Theme & Layout Customizations
+        # ... (جميع أكواد البايثون لتعديل الألوان والخطوط والكبر والأفقية)
+
+    - name: Execute Build (Fail-safe Mode)
+      run: |
+        find . -name "gradlew" -exec chmod +x {} \;
+        
+        GRADLE_BIN=$(find . -name "gradlew" | head -n 1)
+        if [ -n "$GRADLE_BIN" ]; then
+          DIR=$(dirname "$GRADLE_BIN")
+          echo "Building using local gradlew in $DIR"
+          cd "$DIR"
+          ./gradlew assembleDebug --no-daemon
+        else
+          echo "Local gradlew not found, using system Gradle..."
+          gradle assembleDebug --no-daemon
+        fi
+
+    - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
-      if: always()
       with:
-        name: DHIQAR-TV-APP
+        name: DHIQAR-TV-CYBER-FINAL
         path: "**/build/outputs/apk/debug/*.apk"
