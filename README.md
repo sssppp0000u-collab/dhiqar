@@ -1,4 +1,4 @@
-name: Build Cyber MyHD Root Fixed
+name: Build Android APK
 
 on:
   push:
@@ -19,74 +19,108 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Extract & Move Project to Root Directory
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+
+    - name: Extract Project ZIP
       run: |
-        sudo apt-get update && sudo apt-get install -y unzip
-        
-        # 1. فك ضغط الملفات إن وجدت
-        for f in *.zip; do
-          [ -e "$f" ] || continue
-          unzip -o "$f" -d extracted_app || true
-        done
-
-        # 2. البحث عن المجلد الحقيقي للمشروع ونقله للجذر
-        REAL_ROOT=$(find . -maxdepth 4 -name "settings.gradle" -o -name "settings.gradle.kts" -o -name "build.gradle" | head -n 1 | xargs dirname)
-
-        if [ -n "$REAL_ROOT" ] && [ "$REAL_ROOT" != "." ]; then
-          echo "Moving files from $REAL_ROOT to root directory..."
-          cp -r "$REAL_ROOT"/* . 2>/dev/null || true
+        unzip -o DHIQAR-TV-V4-PRO.zip
+        if [ -d "DHIQAR-TV-V4-PRO" ]; then
+          cp -rn DHIQAR-TV-V4-PRO/* . || true
         fi
 
-        # 3. إنشاء ملف settings.gradle في الجذر إذا كان مفقوداً
-        if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
-          echo "include ':app'" > settings.gradle
-        fi
-
-    - name: Inject MyHD Subscription & Cyber Theme
+    - name: Inject PIN Code System & Fix UI
       run: |
-        cat << 'EOF' > patch.py
-        import glob, os, re
+        python3 -c "
+        import glob, re
 
-        PIN = "2027"
-        MYHD = "356288617436"
+        # --- إعدادات الرمز والسيرفر ---
+        PIN_CODE = '2027'
+        SERVER_URL = 'http://vod4k.cc:80'
+        USERNAME = '2142771292105495'
+        PASSWORD = '2142771292105495'
 
-        # ربط الرمز 2027 باشتراك MyHD
-        for p in glob.glob("**/*.java", recursive=True) + glob.glob("**/*.kt", recursive=True):
-            if "build/" in p: continue
-            try:
-                with open(p, "r", encoding="utf-8", errors="ignore") as f:
-                    txt = f.read()
-                if "getText()" in txt or "toString()" in txt:
-                    txt = re.sub(
-                        r'(String\s+([a-zA-Z0-9_]+)\s*=\s*[^;]*getText\(\)\.toString\(\)[^;]*;)',
-                        r'\1\n        if (\2 != null && (\2.trim().equals("' + PIN + '") || \2.trim().contains("' + PIN + '"))) { \2 = "' + MYHD + '"; }',
-                        txt
-                    )
-                    with open(p, "w", encoding="utf-8") as f: f.write(txt)
-            except: pass
+        # 1. التعديل البرمجي لملفات الكود (Java / Kotlin) لتفعيل الرمز 2027
+        source_files = glob.glob('**/*.java', recursive=True) + glob.glob('**/*.kt', recursive=True)
+        for path in source_files:
+            if 'build/' in path:
+                continue
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                code = f.read()
 
-        # تطبيق ثيم النيون Cyber
-        colors = '<?xml version="1.0" encoding="utf-8"?><resources><color name="colorPrimary">#00F0FF</color><color name="colorPrimaryDark">#030508</color><color name="colorAccent">#00FF66</color><color name="backgroundColor">#020305</color><color name="cardBg">#0A0F1D</color><color name="textColorPrimary">#FFFFFF</color><color name="textColorSecondary">#00FF66</color></resources>'
-        for c in glob.glob("**/res/values/colors.xml", recursive=True):
-            if "build/" not in c:
-                try: open(c, "w", encoding="utf-8").write(colors)
-                except: pass
-        EOF
-        python3 patch.py
+            # إدراج التفاعل مع رمز PIN 2027 عند جلب النصوص
+            if 'getText()' in code or 'toString()' in code:
+                # استبدال الإدخال بالبيانات الحقيقية إذا كان المدخل هو 2027
+                new_code = re.sub(
+                    r'(String\s+([a-zA-Z0-9_]+)\s*=\s*[^;]*getText\(\)\.toString\(\)[^;]*;)',
+                    rf'\1\n        if (\2 != null && (\2.trim().equals(\"{PIN_CODE}\") || \2.trim().contains(\"{PIN_CODE}\"))) {{ \2 = \"{SERVER_URL}\"; }}',
+                    code
+                )
+                if new_code != code:
+                    with open(path, 'w', encoding='utf-8') as f:
+                        f.write(new_code)
+                    print(f'Injected PIN logic to: {path}')
 
-    - name: Ensure Gradle Wrapper Exists
-      run: |
-        if [ ! -f "./gradlew" ]; then
-          gradle wrapper --gradle-version 8.5
-        fi
-        chmod +x gradlew
+        # 2. إصلاح الواجهة والشعار وحجم التمرير (activity_main.xml)
+        layouts = glob.glob('**/res/layout/activity_main.xml', recursive=True)
+        for path in layouts:
+            with open(path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # تحسين إرشاد الخانة الأولى ليظهر أنه يمكن كتابة 2027
+            content = content.replace('android:hint=\"http://', 'android:hint=\"أدخل الرمز 2027 أو الرابط: http://')
+
+            # ضبط حجم اللوجو والشعار
+            if '<ImageView' in content:
+                content = re.sub(
+                    r'(<ImageView[^>]*?)(/?>)',
+                    lambda m: m.group(1) + (' android:adjustViewBounds=\"true\" android:scaleType=\"fitCenter\"' if 'scaleType' not in m.group(1) else '') + m.group(2),
+                    content
+                )
+
+            # تغليف الشاشة بـ ScrollView للتمرير
+            if 'ScrollView' not in content:
+                clean_content = content.replace('<?xml version=\"1.0\" encoding=\"utf-8\"?>', '').strip()
+                content = f'''<?xml version=\"1.0\" encoding=\"utf-8\"?>
+        <ScrollView xmlns:android=\"http://schemas.android.com/apk/res/android\"
+            xmlns:app=\"http://schemas.android.com/apk/res-auto\"
+            xmlns:tools=\"http://schemas.android.com/tools\"
+            android:layout_width=\"match_parent\"
+            android:layout_height=\"match_parent\"
+            android:fillViewport=\"true\"
+            android:scrollbars=\"vertical\">
+
+            {clean_content}
+
+        </ScrollView>'''
+
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f'Updated Layout: {path}')
+
+        # 3. ضبط الـ Manifest لدعم الكيبورد
+        manifests = glob.glob('**/AndroidManifest.xml', recursive=True)
+        for mpath in manifests:
+            with open(mpath, 'r', encoding='utf-8') as f:
+                mcontent = f.read()
+            if 'windowSoftInputMode' not in mcontent:
+                mcontent = mcontent.replace('<activity', '<activity android:windowSoftInputMode=\"adjustResize\"', 1)
+                with open(mpath, 'w', encoding='utf-8') as f:
+                    f.write(mcontent)
+                print(f'Patched manifest: {mpath}')
+        "
 
     - name: Build Debug APK
       run: |
-        ./gradlew assembleDebug --no-daemon --stacktrace
+        if [ -f "./gradlew" ]; then
+          chmod +x gradlew
+          ./gradlew assembleDebug
+        else
+          gradle assembleDebug
+        fi
 
-    - name: Upload APK Artifact
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: DHIQAR-TV-FINAL
+        name: DHIQAR-TV-v4-PRO
         path: "**/build/outputs/apk/debug/*.apk"
