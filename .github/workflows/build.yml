@@ -18,11 +18,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Find and Unzip Project
+      - name: Unzip Project Directly
         run: |
-          ZIP_FILE=$(find . -iname "*DHIQAR*TV*.zip" | head -n 1)
           mkdir -p dhiqar_build
-          unzip -o "$ZIP_FILE" -d dhiqar_build
+          # هنا عطيناه اسم الملف مباشرة بدون بحث
+          unzip -o DHIQAR-TV-V5-PRO-FULL.zip -d dhiqar_build
           PROJECT_DIR=$(dirname $(find dhiqar_build -name "settings.gradle" | head -n 1))
           echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
 
