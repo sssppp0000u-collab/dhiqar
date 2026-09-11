@@ -1,9 +1,10 @@
-name: Build DHIQAR TV APK
+name: Build DHIQAR TV
 
 on:
   push:
     branches:
       - main
+      - master
   workflow_dispatch:
 
 permissions:
@@ -11,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    name: Build DHIQAR TV
+    name: DHIQAR TV APK
     runs-on: ubuntu-latest
 
     steps:
@@ -23,65 +24,76 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
-      - name: Find Project
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Extract DHIQAR TV Project
         shell: bash
         run: |
           set -e
 
-          echo "Searching for Android project..."
+          ZIP_FILE=$(find . -maxdepth 2 -type f -iname "*DHIQAR*TV*.zip" | head -n 1)
 
-          if [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
-            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
-            exit 0
-          fi
-
-          ZIP=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
-
-          if [ -z "$ZIP" ]; then
-            echo "ERROR: Android project or ZIP not found"
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: DHIQAR TV ZIP not found"
             exit 1
           fi
 
-          echo "ZIP found: $ZIP"
+          echo "ZIP: $ZIP_FILE"
 
-          mkdir -p project
-          unzip -o "$ZIP" -d project
+          rm -rf dhiqar_project
+          mkdir -p dhiqar_project
 
-          SETTINGS=$(find project -type f \
+          unzip -o "$ZIP_FILE" -d dhiqar_project
+
+      - name: Find Android Project
+        shell: bash
+        run: |
+          set -e
+
+          SETTINGS=$(find dhiqar_project -type f \
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
             echo "ERROR: settings.gradle not found"
-            echo "The ZIP does not contain a complete Android project."
-            find project -maxdepth 5 -type f | head -200
+            find dhiqar_project -maxdepth 6 -type f | head -200
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Android project found:"
-          echo "$PROJECT_DIR"
-
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+          echo "Android project:"
+          echo "$PROJECT_DIR"
 
       - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
 
-          cd "$PROJECT_DIR"
-
           echo "================================"
           echo " DHIQAR TV BUILD"
+          echo " Gradle 8.9"
+          echo " Java 17"
           echo "================================"
 
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
             ./gradlew assembleDebug --no-daemon --stacktrace
           else
             gradle assembleDebug --no-daemon --stacktrace
@@ -92,30 +104,27 @@ jobs:
         run: |
           set -e
 
-          echo "Searching for APK..."
-
           APK=$(find "$PROJECT_DIR" \
             -type f \
             -path "*/build/outputs/apk/debug/*.apk" \
             | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERROR: APK was not created."
+            echo "ERROR: APK was not created"
             find "$PROJECT_DIR" -type f -name "*.apk" || true
             exit 1
           fi
 
-          echo "APK:"
-          echo "$APK"
-
           mkdir -p release
-          cp "$APK" "release/DHIQAR-TV.apk"
 
-          ls -lh release/DHIQAR-TV.apk
+          cp "$APK" release/DHIQAR-TV-V5-PRO.apk
+
+          echo "APK CREATED:"
+          ls -lh release/DHIQAR-TV-V5-PRO.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DHIQAR-TV-APK
-          path: release/DHIQAR-TV.apk
+          name: DHIQAR-TV-V5-PRO
+          path: release/DHIQAR-TV-V5-PRO.apk
           if-no-files-found: error
