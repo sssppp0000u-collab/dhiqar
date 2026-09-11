@@ -1,4 +1,4 @@
-- name: Modify Layout
+- name: Modify APK - Arabic Hacker Theme
   env:
     DECODE_DIR: decoded
   run: |
@@ -6,310 +6,471 @@
     import os
     import re
     from pathlib import Path
+    import xml.etree.ElementTree as ET
 
     ROOT = Path(os.environ["DECODE_DIR"])
-    LAYOUT_DIR = ROOT / "res" / "layout"
+    RES = ROOT / "res"
 
-    # =========================================================
-    # القيمة التي يقرأها التطبيق للسيرفر.
-    #
-    # ضع هنا فقط عنوان السيرفر الذي تملكه/مصرح لك باستخدامه.
-    # إذا كان الـAPK يحتوي أصلاً على القيمة الصحيحة، اتركها None
-    # حتى يحافظ السكربت على القيمة الموجودة.
-    # =========================================================
+    ANDROID_NS = "http://schemas.android.com/apk/res/android"
 
-    DEFAULT_SERVER_URL = None
-
-    ACTIVATION_HINT = "أدخل رمز التفعيل"
-
-
-    # ---------------------------------------------------------
-    # Helpers
-    # ---------------------------------------------------------
-
-    def add_or_replace_attribute(tag, attr, value):
-        """
-        إضافة android:attribute أو استبدالها داخل XML tag.
-        """
-
-        pattern = re.compile(
-            rf'\s+android:{re.escape(attr)}\s*=\s*["\'][^"\']*["\']',
-            re.IGNORECASE
-        )
-
-        replacement = f' android:{attr}="{value}"'
-
-        if pattern.search(tag):
-            return pattern.sub(
-                replacement,
-                tag,
-                count=1
-            )
-
-        return tag[:-1].rstrip() + replacement + ">"
-
-
-    def is_input_tag(tag):
-        return bool(
-            re.search(
-                r'<\s*(EditText|AutoCompleteTextView|'
-                r'com\.[^ >]*EditText|'
-                r'androidx\.[^ >]*EditText)',
-                tag,
-                re.IGNORECASE
-            )
-        )
-
-
-    def get_attr(tag, name):
-        match = re.search(
-            rf'android:{re.escape(name)}\s*=\s*["\']([^"\']*)["\']',
-            tag,
-            re.IGNORECASE
-        )
-
-        return match.group(1) if match else ""
-
-
-    def looks_like_server(tag):
-        text = tag.lower()
-
-        keywords = (
-            "server",
-            "serverurl",
-            "server_url",
-            "url",
-            "host",
-            "baseurl",
-            "base_url",
-            "link"
-        )
-
-        # id / hint / text / input-related attributes
-        for keyword in keywords:
-            if keyword in text:
-                return True
-
-        return False
-
-
-    def looks_like_password(tag):
-        text = tag.lower()
-
-        keywords = (
-            "password",
-            "passwd",
-            "pwd",
-            "pass"
-        )
-
-        return any(
-            keyword in text
-            for keyword in keywords
-        )
-
-
-    # =========================================================
-    # Search layouts
-    # =========================================================
-
-    if not LAYOUT_DIR.exists():
-        raise SystemExit(
-            "❌ res/layout directory not found."
-        )
-
-
-    modified_files = 0
-    server_fields = 0
-    password_fields = 0
-    activation_fields = 0
-
-
-    for xml_file in LAYOUT_DIR.rglob("*.xml"):
-
-        try:
-            text = xml_file.read_text(
-                encoding="utf-8"
-            )
-        except Exception:
-            continue
-
-
-        # -----------------------------------------------------
-        # Find XML tags containing EditText
-        # -----------------------------------------------------
-
-        pattern = re.compile(
-            r'<[^<>]*(?:EditText|AutoCompleteTextView)[^<>]*>',
-            re.IGNORECASE
-        )
-
-        changed = False
-
-
-        def process_tag(match):
-
-            nonlocal changed
-            nonlocal server_fields
-            nonlocal password_fields
-            nonlocal activation_fields
-
-            tag = match.group(0)
-
-            if not is_input_tag(tag):
-                return tag
-
-
-            # =================================================
-            # SERVER FIELD
-            # =================================================
-
-            if looks_like_server(tag):
-
-                server_fields += 1
-
-                # Hide visually
-                tag = add_or_replace_attribute(
-                    tag,
-                    "visibility",
-                    "gone"
-                )
-
-                # -------------------------------------------------
-                # IMPORTANT:
-                #
-                # If the original XML already contains android:text,
-                # preserve it.
-                #
-                # If DEFAULT_SERVER_URL is explicitly supplied,
-                # use that value.
-                # -------------------------------------------------
-
-                existing_text = get_attr(
-                    tag,
-                    "text"
-                )
-
-                if DEFAULT_SERVER_URL:
-                    tag = add_or_replace_attribute(
-                        tag,
-                        "text",
-                        DEFAULT_SERVER_URL
-                    )
-
-                    print(
-                        f"  SERVER: {xml_file} -> "
-                        f"using configured server URL"
-                    )
-
-                elif existing_text:
-                    print(
-                        f"  SERVER: {xml_file} -> "
-                        f"preserving existing value"
-                    )
-
-                else:
-                    print(
-                        f"  SERVER: {xml_file} -> "
-                        f"hidden, but no server value injected"
-                    )
-
-                changed = True
-
-                return tag
-
-
-            # =================================================
-            # PASSWORD FIELD
-            # =================================================
-
-            if looks_like_password(tag):
-
-                password_fields += 1
-
-                # Hide visually.
-                #
-                # We deliberately preserve the APK's existing
-                # value instead of injecting credentials.
-                tag = add_or_replace_attribute(
-                    tag,
-                    "visibility",
-                    "gone"
-                )
-
-                changed = True
-
-                print(
-                    f"  PASSWORD: {xml_file} -> hidden"
-                )
-
-                return tag
-
-
-            return tag
-
-
-        new_text = pattern.sub(
-            process_tag,
-            text
-        )
-
-
-        if new_text != text:
-
-            xml_file.write_text(
-                new_text,
-                encoding="utf-8"
-            )
-
-            modified_files += 1
-
-
-    # =========================================================
-    # Create a simple visible activation field
-    # =========================================================
-
-    activation_layout = (
-        LAYOUT_DIR /
-        "dhiqar_activation.xml"
+    ET.register_namespace(
+        "android",
+        ANDROID_NS
     )
 
-    activation_layout.write_text(
+
+    # =========================================================
+    # 1. Arabic translations
+    # =========================================================
+
+    TRANSLATIONS = {
+
+        # Application
+        "app_name": "ذي قار TV",
+        "application_name": "ذي قار TV",
+        "app_title": "ذي قار TV",
+
+        # Login
+        "login": "تسجيل الدخول",
+        "sign_in": "تسجيل الدخول",
+        "signin": "تسجيل الدخول",
+        "login_button": "دخول",
+        "username": "اسم المستخدم",
+        "user_name": "اسم المستخدم",
+        "password": "كلمة المرور",
+        "pass": "كلمة المرور",
+
+        # Server
+        "server": "السيرفر",
+        "server_url": "رابط السيرفر",
+        "serverurl": "رابط السيرفر",
+        "url": "الرابط",
+        "host": "السيرفر",
+
+        # IPTV
+        "channels": "القنوات",
+        "channel": "القناة",
+        "live": "البث المباشر",
+        "live_tv": "البث المباشر",
+        "live_channels": "القنوات المباشرة",
+
+        # EPG
+        "epg": "دليل البرامج",
+        "program_guide": "دليل البرامج",
+        "tv_guide": "دليل البرامج",
+        "guide": "الدليل",
+        "programs": "البرامج",
+
+        # Favorites
+        "favorites": "المفضلة",
+        "favorite": "المفضلة",
+
+        # Categories
+        "categories": "التصنيفات",
+        "category": "التصنيف",
+        "movies": "الأفلام",
+        "series": "المسلسلات",
+        "sports": "الرياضة",
+        "news": "الأخبار",
+        "kids": "الأطفال",
+        "entertainment": "الترفيه",
+
+        # General
+        "home": "الرئيسية",
+        "settings": "الإعدادات",
+        "search": "بحث",
+        "search_hint": "ابحث هنا...",
+        "back": "رجوع",
+        "next": "التالي",
+        "previous": "السابق",
+        "cancel": "إلغاء",
+        "ok": "موافق",
+        "confirm": "تأكيد",
+        "close": "إغلاق",
+        "exit": "خروج",
+        "refresh": "تحديث",
+        "reload": "إعادة تحميل",
+        "retry": "إعادة المحاولة",
+
+        # Connection
+        "connect": "اتصال",
+        "connecting": "جاري الاتصال...",
+        "connected": "تم الاتصال",
+        "disconnected": "غير متصل",
+        "connection_error": "خطأ في الاتصال",
+        "loading": "جاري التحميل...",
+        "please_wait": "يرجى الانتظار...",
+
+        # Errors
+        "error": "خطأ",
+        "failed": "فشل",
+        "no_data": "لا توجد بيانات",
+        "no_channels": "لا توجد قنوات",
+        "no_results": "لا توجد نتائج",
+
+        # Player
+        "play": "تشغيل",
+        "pause": "إيقاف مؤقت",
+        "stop": "إيقاف",
+        "fullscreen": "ملء الشاشة",
+        "volume": "الصوت",
+
+        # Account
+        "account": "الحساب",
+        "logout": "تسجيل الخروج",
+        "remember_me": "تذكرني",
+
+        # Other
+        "language": "اللغة",
+        "arabic": "العربية",
+        "version": "الإصدار",
+        "about": "حول التطبيق",
+        "help": "المساعدة"
+    }
+
+
+    # =========================================================
+    # 2. Update strings.xml
+    # =========================================================
+
+    values_dirs = list(
+        RES.glob("values*")
+    )
+
+    for values_dir in values_dirs:
+
+        strings_file = values_dir / "strings.xml"
+
+        if not strings_file.exists():
+            continue
+
+        try:
+
+            tree = ET.parse(strings_file)
+            root = tree.getroot()
+
+            changed = False
+
+            for element in root.findall("string"):
+
+                name = element.get("name")
+
+                if not name:
+                    continue
+
+                # إزالة suffix بسيط مثل:
+                # login_text
+                # login_button_text
+                normalized = name.lower()
+
+                if normalized in TRANSLATIONS:
+
+                    element.text = TRANSLATIONS[
+                        normalized
+                    ]
+
+                    changed = True
+
+                else:
+
+                    # محاولة مطابقة الأسماء المركبة
+                    for key, arabic in TRANSLATIONS.items():
+
+                        if (
+                            normalized == key
+                            or normalized.startswith(key + "_")
+                        ):
+
+                            # لا نغير النصوص الطويلة التي تحتوي
+                            # placeholders مثل %1$s
+                            old_text = element.text or ""
+
+                            if (
+                                "%s" not in old_text
+                                and "%1" not in old_text
+                                and "%2" not in old_text
+                            ):
+
+                                element.text = arabic
+                                changed = True
+
+                            break
+
+
+            # تأكيد اسم التطبيق
+            app_name = None
+
+            for element in root.findall("string"):
+
+                if element.get("name") == "app_name":
+
+                    app_name = element
+                    break
+
+            if app_name is None:
+
+                app_name = ET.SubElement(
+                    root,
+                    "string",
+                    {"name": "app_name"}
+                )
+
+            app_name.text = "ذي قار TV"
+
+            tree.write(
+                strings_file,
+                encoding="utf-8",
+                xml_declaration=True
+            )
+
+            print(
+                "✅ Arabic strings:",
+                strings_file
+            )
+
+        except Exception as e:
+
+            print(
+                "⚠️ strings.xml error:",
+                strings_file,
+                e
+            )
+
+
+    # =========================================================
+    # 3. Create / replace colors.xml
+    # =========================================================
+
+    main_values = RES / "values"
+
+    main_values.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    colors_file = main_values / "colors.xml"
+
+    colors_xml = """<?xml version="1.0" encoding="utf-8"?>
+    <resources>
+
+        <!-- Hacker / Cyberpunk Dark Theme -->
+
+        <color name="black">#000000</color>
+        <color name="background">#000000</color>
+        <color name="background_dark">#101010</color>
+        <color name="surface">#101010</color>
+        <color name="surface_dark">#151515</color>
+
+        <!-- Neon -->
+        <color name="neon_green">#00FF00</color>
+        <color name="neon_cyan">#00E5FF</color>
+
+        <!-- Text -->
+        <color name="text_primary">#FFFFFF</color>
+        <color name="text_secondary">#BDBDBD</color>
+        <color name="text_disabled">#666666</color>
+
+        <!-- UI -->
+        <color name="button_background">#101010</color>
+        <color name="button_text">#00FF00</color>
+        <color name="accent">#00E5FF</color>
+        <color name="divider">#202020</color>
+
+        <!-- Status -->
+        <color name="success">#00FF00</color>
+        <color name="error">#FF1744</color>
+        <color name="warning">#FFD600</color>
+
+    </resources>
+    """
+
+    colors_file.write_text(
+        colors_xml,
+        encoding="utf-8"
+    )
+
+    print(
+        "✅ Hacker colors.xml created"
+    )
+
+
+    # =========================================================
+    # 4. Add theme resources
+    # =========================================================
+
+    themes_file = main_values / "dhiqar_theme.xml"
+
+    themes_xml = """<?xml version="1.0" encoding="utf-8"?>
+    <resources>
+
+        <style
+            name="DhiqarHackerTheme"
+            parent="@android:style/Theme.Material.NoActionBar">
+
+            <item name="android:fontFamily">sans</item>
+
+            <item name="android:windowBackground">
+                @color/background
+            </item>
+
+            <item name="android:colorAccent">
+                @color/neon_cyan
+            </item>
+
+            <item name="android:textColorPrimary">
+                @color/text_primary
+            </item>
+
+            <item name="android:textColorSecondary">
+                @color/text_secondary
+            </item>
+
+            <item name="android:navigationBarColor">
+                @color/black
+            </item>
+
+            <item name="android:statusBarColor">
+                @color/black
+            </item>
+
+        </style>
+
+    </resources>
+    """
+
+    themes_file.write_text(
+        themes_xml,
+        encoding="utf-8"
+    )
+
+    print(
+        "✅ Hacker theme resources created"
+    )
+
+
+    # =========================================================
+    # 5. Modify existing layout XML
+    #
+    # IMPORTANT:
+    # Server / Username / Password remain visible.
+    # We do NOT hide or empty them.
+    # =========================================================
+
+    layout_dirs = [
+        p for p in RES.glob("layout*")
+        if p.is_dir()
+    ]
+
+    for layout_dir in layout_dirs:
+
+        for xml_file in layout_dir.rglob("*.xml"):
+
+            try:
+
+                text = xml_file.read_text(
+                    encoding="utf-8"
+                )
+
+            except Exception:
+
+                continue
+
+
+            original = text
+
+
+            # -------------------------------------------------
+            # Make dark backgrounds
+            # -------------------------------------------------
+
+            text = re.sub(
+                r'android:background\s*=\s*["\']#[0-9a-fA-F]{6,8}["\']',
+                'android:background="@color/background"',
+                text
+            )
+
+
+            # -------------------------------------------------
+            # Improve primary text color
+            # -------------------------------------------------
+
+            text = re.sub(
+                r'android:textColor\s*=\s*["\']#[0-9a-fA-F]{6,8}["\']',
+                'android:textColor="@color/text_primary"',
+                text
+            )
+
+
+            # -------------------------------------------------
+            # Keep input fields usable
+            #
+            # Do NOT set:
+            # visibility="gone"
+            #
+            # Do NOT set:
+            # text=""
+            #
+            # Existing values remain untouched.
+            # -------------------------------------------------
+
+            if text != original:
+
+                xml_file.write_text(
+                    text,
+                    encoding="utf-8"
+                )
+
+                print(
+                    "🎨 Styled:",
+                    xml_file
+                )
+
+
+    # =========================================================
+    # 6. Add Arabic helper strings
+    # =========================================================
+
+    helper_file = main_values / "dhiqar_arabic.xml"
+
+    helper_file.write_text(
         """<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="24dp">
+<resources>
 
-    <EditText
-        android:id="@+id/dhiqar_activation_code"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="أدخل رمز التفعيل"
-        android:text=""
-        android:singleLine="true"
-        android:inputType="text" />
+    <string name="dhiqar_login_title">تسجيل الدخول</string>
+    <string name="dhiqar_server">السيرفر</string>
+    <string name="dhiqar_username">اسم المستخدم</string>
+    <string name="dhiqar_password">كلمة المرور</string>
+    <string name="dhiqar_channels">القنوات</string>
+    <string name="dhiqar_epg">دليل البرامج</string>
+    <string name="dhiqar_favorites">المفضلة</string>
+    <string name="dhiqar_settings">الإعدادات</string>
+    <string name="dhiqar_search">بحث</string>
+    <string name="dhiqar_connect">دخول</string>
+    <string name="dhiqar_loading">جاري التحميل...</string>
+    <string name="dhiqar_connection_error">حدث خطأ في الاتصال بالسيرفر</string>
+    <string name="dhiqar_retry">إعادة المحاولة</string>
 
-</LinearLayout>
+</resources>
 """,
         encoding="utf-8"
     )
 
 
     # =========================================================
-    # Summary
+    # 7. Final report
     # =========================================================
 
     print("")
-    print("========================================")
-    print("LAYOUT MODIFICATION COMPLETE")
-    print("========================================")
-    print(f"Modified XML files : {modified_files}")
-    print(f"Server fields      : {server_fields}")
-    print(f"Password fields    : {password_fields}")
-    print(f"Activation layout   : {activation_layout}")
-    print("========================================")
+    print("==============================================")
+    print("      DHIQAR TV - VISUAL MODIFICATION")
+    print("==============================================")
+    print("✅ Arabic localization applied")
+    print("✅ Dark Hacker / Cyberpunk colors applied")
+    print("✅ Neon Green / Cyan accents added")
+    print("✅ Server field preserved")
+    print("✅ Username field preserved")
+    print("✅ Password field preserved")
+    print("✅ Existing input values preserved")
+    print("==============================================")
+
     PY
