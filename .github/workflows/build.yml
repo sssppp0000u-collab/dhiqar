@@ -29,6 +29,56 @@ jobs:
           cp -rn DHIQAR-TV-V4-PRO/* . || true
         fi
 
+    - name: Patch UI (Fix Image Scaling & ScrollView)
+      run: |
+        python3 -c "
+        import glob, re
+
+        layouts = glob.glob('**/res/layout/activity_main.xml', recursive=True)
+        for path in layouts:
+            with open(path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # Fix ImageView scaling (fitCenter & adjustViewBounds)
+            if '<ImageView' in content:
+                content = re.sub(
+                    r'(<ImageView[^>]*?)(/?>)',
+                    lambda m: m.group(1) + (' android:adjustViewBounds=\"true\" android:scaleType=\"fitCenter\"' if 'scaleType' not in m.group(1) else '') + m.group(2),
+                    content
+                )
+
+            # Wrap inside ScrollView if not present
+            if 'ScrollView' not in content:
+                clean_content = content.replace('<?xml version=\"1.0\" encoding=\"utf-8\"?>', '').strip()
+                content = f'''<?xml version=\"1.0\" encoding=\"utf-8\"?>
+        <ScrollView xmlns:android=\"http://schemas.android.com/apk/res/android\"
+            xmlns:app=\"http://schemas.android.com/apk/res-auto\"
+            xmlns:tools=\"http://schemas.android.com/tools\"
+            android:layout_width=\"match_parent\"
+            android:layout_height=\"match_parent\"
+            android:fillViewport=\"true\"
+            android:scrollbars=\"vertical\">
+
+            {clean_content}
+
+        </ScrollView>'''
+
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f'Patched layout and image scaling: {path}')
+
+        # Adjust AndroidManifest for auto keyboard resize
+        manifests = glob.glob('**/AndroidManifest.xml', recursive=True)
+        for mpath in manifests:
+            with open(mpath, 'r', encoding='utf-8') as f:
+                mcontent = f.read()
+            if 'windowSoftInputMode' not in mcontent:
+                mcontent = mcontent.replace('<activity', '<activity android:windowSoftInputMode=\"adjustResize\"', 1)
+                with open(mpath, 'w', encoding='utf-8') as f:
+                    f.write(mcontent)
+                print(f'Patched manifest: {mpath}')
+        "
+
     - name: Build Debug APK
       run: |
         if [ -f "./gradlew" ]; then
