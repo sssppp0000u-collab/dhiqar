@@ -18,11 +18,15 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Unzip Project Directly
+      - name: Radar Unzip (Auto-Detect)
         run: |
           mkdir -p dhiqar_build
-          # هنا عطيناه اسم الملف مباشرة بدون بحث
-          unzip -o DHIQAR-TV-V5-PRO-FULL.zip -d dhiqar_build
+          # هذا الرادار راح يصيد أي ملف ZIP ويفكه تلقائياً
+          ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" | head -n 1)
+          echo "Found ZIP file: $ZIP_FILE"
+          unzip -q "$ZIP_FILE" -d dhiqar_build
+          
+          # البحث عن المجلد الصحيح
           PROJECT_DIR=$(dirname $(find dhiqar_build -name "settings.gradle" | head -n 1))
           echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
 
@@ -31,6 +35,7 @@ jobs:
           MAIN_ACT=$(find ${{ env.PROJECT_DIR }} -name "MainActivity.java" | head -n 1)
           if [ -n "$MAIN_ACT" ]; then
             sed -i '335s/.*/\/* & *\//' "$MAIN_ACT"
+            echo "Line 335 fixed successfully!"
           fi
 
       - name: Make Gradle Executable
