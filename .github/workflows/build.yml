@@ -1,111 +1,48 @@
-name: DHIQAR TV APK Build
+name: DHIQAR TV Build Pro
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [ main, master ]
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   build:
-    name: Build DHIQAR TV APK
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK
+      - name: Find and Unzip Project
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          ZIP_FILE=$(find . -iname "*DHIQAR*TV*.zip" | head -n 1)
+          mkdir -p dhiqar_build
+          unzip -o "$ZIP_FILE" -d dhiqar_build
+          PROJECT_DIR=$(dirname $(find dhiqar_build -name "settings.gradle" | head -n 1))
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Find DHIQAR TV ZIP
-        shell: bash
+      - name: Fix Line 335 in MainActivity
         run: |
-          set -e
-          ZIP_FILE=$(find . -maxdepth 3 -type f -iname "*DHIQAR*TV*.zip" | head -n 1 || true)
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: DHIQAR TV ZIP not found."
-            exit 1
-          fi
-          rm -rf dhiqar-project
-          mkdir -p dhiqar-project
-          unzip -o "$ZIP_FILE" -d dhiqar-project
-
-      - name: Locate Android Project
-        shell: bash
-        run: |
-          set -e
-          SETTINGS=$(find dhiqar-project -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1 || true)
-          if [ -z "$SETTINGS" ]; then
-            echo "ERROR: Android Gradle project not found."
-            exit 1
-          fi
-          PROJECT_DIR=$(dirname "$SETTINGS")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      - name: Patch MainActivity Java Error
-        shell: bash
-        run: |
-          MAIN_ACT=$(find dhiqar-project -type f -name "MainActivity.java" | head -n 1 || true)
+          MAIN_ACT=$(find ${{ env.PROJECT_DIR }} -name "MainActivity.java" | head -n 1)
           if [ -n "$MAIN_ACT" ]; then
-            echo "Patching $MAIN_ACT..."
-            sed -i '335s/^/\/\/ /' "$MAIN_ACT" || true
+            sed -i '335s/.*/\/* & *\//' "$MAIN_ACT"
           fi
 
-      - name: Prepare Gradle Wrapper
+      - name: Make Gradle Executable
         working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          if [ -f "gradlew" ]; then
-            chmod +x gradlew
-          fi
+        run: chmod +x gradlew
 
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
-        shell: bash
-        run: |
-          if [ -f "gradlew" ]; then
-            ./gradlew assembleDebug --no-daemon --continue
-          else
-            gradle assembleDebug --no-daemon --continue
-          fi
+        run: ./gradlew assembleDebug --no-daemon
 
-      - name: Find & Package Final APK
-        shell: bash
-        run: |
-          set -e
-          APK=$(find "$PROJECT_DIR" -type f -name "*.apk" | head -n 1 || true)
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK was not created."
-            exit 1
-          fi
-          mkdir -p release
-          cp "$APK" "release/DHIQAR-TV-V5-PRO.apk"
-          echo "FINAL APK READY AT release/DHIQAR-TV-V5-PRO.apk"
-
-      - name: Upload APK Artifact
+      - name: Upload Final APK
         uses: actions/upload-artifact@v4
         with:
-          name: DHIQAR-TV-V5-PRO
-          path: release/DHIQAR-TV-V5-PRO.apk
-          if-no-files-found: error
+          name: DHIQAR-TV-READY
+          path: ${{ env.PROJECT_DIR }}/**/*.apk
