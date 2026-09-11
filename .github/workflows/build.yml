@@ -1,207 +1,121 @@
-name: Build Dhiqar TV
+name: Build DHIQAR TV APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Build DHIQAR TV
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Environment & Tools
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Find Project
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y openjdk-17-jdk apktool zipalign apksigner unzip python3
+          set -e
 
-      - name: Unzip Source File
-        run: |
-          if [ -f "DHIQAR-TV-V4-PRO.zip" ]; then
-            unzip -o DHIQAR-TV-V4-PRO.zip -d decoded || true
-          fi
-          if [ ! -d "decoded" ]; then
-            mkdir -p decoded
-          fi
+          echo "Searching for Android project..."
 
-      - name: Modify APK - Arabic Hacker Theme
-        env:
-          DECODE_DIR: decoded
-        run: |
-          python3 <<'PY'
-          import os
-          import re
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
-
-          ROOT = Path(os.environ["DECODE_DIR"])
-          RES = ROOT / "res"
-
-          ANDROID_NS = "http://schemas.android.com/apk/res/android"
-          ET.register_namespace("android", ANDROID_NS)
-
-          TRANSLATIONS = {
-              "app_name": "ذي قار TV",
-              "application_name": "ذي قار TV",
-              "app_title": "ذي قار TV",
-              "login": "تسجيل الدخول",
-              "sign_in": "تسجيل الدخول",
-              "signin": "تسجيل الدخول",
-              "login_button": "دخول",
-              "username": "اسم المستخدم",
-              "user_name": "اسم المستخدم",
-              "password": "كلمة المرور",
-              "pass": "كلمة المرور",
-              "server": "السيرفر",
-              "server_url": "رابط السيرفر",
-              "serverurl": "رابط السيرفر",
-              "url": "الرابط",
-              "host": "السيرفر",
-              "channels": "القنوات",
-              "channel": "القناة",
-              "live": "البث المباشر",
-              "live_tv": "البث المباشر",
-              "live_channels": "القنوات المباشرة",
-              "epg": "دليل البرامج",
-              "program_guide": "دليل البرامج",
-              "tv_guide": "دليل البرامج",
-              "guide": "الدليل",
-              "programs": "البرامج",
-              "favorites": "المفضلة",
-              "favorite": "المفضلة",
-              "categories": "التصنيفات",
-              "category": "التصنيف",
-              "movies": "الأفلام",
-              "series": "المسلسلات",
-              "sports": "الرياضة",
-              "news": "الأخبار",
-              "kids": "الأطفال",
-              "entertainment": "الترفيه",
-              "home": "الرئيسية",
-              "settings": "الإعدادات",
-              "search": "بحث",
-              "search_hint": "ابحث هنا...",
-              "back": "رجوع",
-              "next": "التالي",
-              "previous": "السابق",
-              "cancel": "إلغاء",
-              "ok": "موافق",
-              "confirm": "تأكيد",
-              "close": "إغلاق",
-              "exit": "خروج",
-              "refresh": "تحديث",
-              "reload": "إعادة تحميل",
-              "retry": "إعادة المحاولة",
-              "connect": "اتصال",
-              "connecting": "جاري الاتصال...",
-              "connected": "تم الاتصال",
-              "disconnected": "غير متصل",
-              "connection_error": "خطأ في الاتصال",
-              "loading": "جاري التحميل...",
-              "please_wait": "يرجى الانتظار...",
-              "error": "خطأ",
-              "failed": "فشل",
-              "no_data": "لا توجد بيانات",
-              "no_channels": "لا توجد قنوات",
-              "no_results": "لا توجد نتائج",
-              "play": "تشغيل",
-              "pause": "إيقاف مؤقت",
-              "stop": "إيقاف",
-              "fullscreen": "ملء الشاشة",
-              "volume": "الصوت",
-              "account": "الحساب",
-              "logout": "تسجيل الخروج",
-              "remember_me": "تذكرني",
-              "language": "اللغة",
-              "arabic": "العربية",
-              "version": "الإصدار",
-              "about": "حول التطبيق",
-              "help": "المساعدة"
-          }
-
-          if RES.exists():
-              values_dirs = list(RES.glob("values*"))
-              for values_dir in values_dirs:
-                  strings_file = values_dir / "strings.xml"
-                  if not strings_file.exists():
-                      continue
-                  try:
-                      tree = ET.parse(strings_file)
-                      root = tree.getroot()
-                      changed = False
-                      for element in root.findall("string"):
-                          name = element.get("name")
-                          if not name:
-                              continue
-                          normalized = name.lower()
-                          if normalized in TRANSLATIONS:
-                              element.text = TRANSLATIONS[normalized]
-                              changed = True
-                          else:
-                              for key, arabic in TRANSLATIONS.items():
-                                  if normalized == key or normalized.startswith(key + "_"):
-                                      old_text = element.text or ""
-                                      if "%s" not in old_text and "%1" not in old_text and "%2" not in old_text:
-                                          element.text = arabic
-                                          changed = True
-                                      break
-                      app_name = None
-                      for element in root.findall("string"):
-                          if element.get("name") == "app_name":
-                              app_name = element
-                              break
-                      if app_name is None:
-                          app_name = ET.SubElement(root, "string", {"name": "app_name"})
-                      app_name.text = "ذي قار TV"
-                      tree.write(strings_file, encoding="utf-8", xml_declaration=True)
-                  except Exception as e:
-                      print("strings.xml error:", e)
-
-              main_values = RES / "values"
-              main_values.mkdir(parents=True, exist_ok=True)
-              colors_file = main_values / "colors.xml"
-              colors_xml = """<?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <color name="black">#000000</color>
-              <color name="background">#000000</color>
-              <color name="background_dark">#101010</color>
-              <color name="surface">#101010</color>
-              <color name="surface_dark">#151515</color>
-              <color name="neon_green">#00FF00</color>
-              <color name="neon_cyan">#00E5FF</color>
-              <color name="text_primary">#FFFFFF</color>
-              <color name="text_secondary">#BDBDBD</color>
-              <color name="text_disabled">#666666</color>
-              <color name="button_background">#101010</color>
-              <color name="button_text">#00FF00</color>
-              <color name="accent">#00E5FF</color>
-              <color name="divider">#202020</color>
-              <color name="success">#00FF00</color>
-              <color name="error">#FF1744</color>
-              <color name="warning">#FFD600</color>
-          </resources>"""
-              colors_file.write_text(colors_xml, encoding="utf-8")
-
-          print("✅ Modification script finished successfully")
-          PY
-
-      - name: Rebuild APK
-        run: |
-          apktool b decoded -o unsigned.apk || true
-          if [ ! -f "unsigned.apk" ]; then
-            cd decoded && zip -r ../unsigned.apk . && cd ..
+          if [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
+            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
+            exit 0
           fi
 
-      - name: Sign APK
-        run: |
-          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out DHIQAR-TV-v4-PRO.apk unsigned.apk || true
+          ZIP=$(find . -maxdepth 2 -type f -iname "*.zip" | head -n 1)
 
-      - name: Upload APK Artifact
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: Android project or ZIP not found"
+            exit 1
+          fi
+
+          echo "ZIP found: $ZIP"
+
+          mkdir -p project
+          unzip -o "$ZIP" -d project
+
+          SETTINGS=$(find project -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: settings.gradle not found"
+            echo "The ZIP does not contain a complete Android project."
+            find project -maxdepth 5 -type f | head -200
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "Android project found:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "================================"
+          echo " DHIQAR TV BUILD"
+          echo "================================"
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          else
+            gradle assembleDebug --no-daemon --stacktrace
+          fi
+
+      - name: Find APK
+        shell: bash
+        run: |
+          set -e
+
+          echo "Searching for APK..."
+
+          APK=$(find "$PROJECT_DIR" \
+            -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not created."
+            find "$PROJECT_DIR" -type f -name "*.apk" || true
+            exit 1
+          fi
+
+          echo "APK:"
+          echo "$APK"
+
+          mkdir -p release
+          cp "$APK" "release/DHIQAR-TV.apk"
+
+          ls -lh release/DHIQAR-TV.apk
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DHIQAR-TV-v4-PRO
-          path: DHIQAR-TV-v4-PRO.apk
+          name: DHIQAR-TV-APK
+          path: release/DHIQAR-TV.apk
+          if-no-files-found: error
