@@ -1,126 +1,315 @@
-name: Build Android APK
+- name: Modify Layout
+  env:
+    DECODE_DIR: decoded
+  run: |
+    python3 <<'PY'
+    import os
+    import re
+    from pathlib import Path
 
-on:
-  push:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
+    ROOT = Path(os.environ["DECODE_DIR"])
+    LAYOUT_DIR = ROOT / "res" / "layout"
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+    # =========================================================
+    # القيمة التي يقرأها التطبيق للسيرفر.
+    #
+    # ضع هنا فقط عنوان السيرفر الذي تملكه/مصرح لك باستخدامه.
+    # إذا كان الـAPK يحتوي أصلاً على القيمة الصحيحة، اتركها None
+    # حتى يحافظ السكربت على القيمة الموجودة.
+    # =========================================================
 
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    DEFAULT_SERVER_URL = None
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+    ACTIVATION_HINT = "أدخل رمز التفعيل"
 
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
 
-    - name: Extract Project ZIP
-      run: |
-        unzip -o DHIQAR-TV-V4-PRO.zip
-        if [ -d "DHIQAR-TV-V4-PRO" ]; then
-          cp -rn DHIQAR-TV-V4-PRO/* . || true
-        fi
+    # ---------------------------------------------------------
+    # Helpers
+    # ---------------------------------------------------------
 
-    - name: Inject PIN Code System & Fix UI
-      run: |
-        python3 -c "
-        import glob, re
+    def add_or_replace_attribute(tag, attr, value):
+        """
+        إضافة android:attribute أو استبدالها داخل XML tag.
+        """
 
-        # --- إعدادات الرمز والسيرفر ---
-        PIN_CODE = '2027'
-        SERVER_URL = 'http://vod4k.cc:80'
-        USERNAME = '2142771292105495'
-        PASSWORD = '2142771292105495'
+        pattern = re.compile(
+            rf'\s+android:{re.escape(attr)}\s*=\s*["\'][^"\']*["\']',
+            re.IGNORECASE
+        )
 
-        # 1. التعديل البرمجي لملفات الكود (Java / Kotlin) لتفعيل الرمز 2027
-        source_files = glob.glob('**/*.java', recursive=True) + glob.glob('**/*.kt', recursive=True)
-        for path in source_files:
-            if 'build/' in path:
-                continue
-            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                code = f.read()
+        replacement = f' android:{attr}="{value}"'
 
-            # إدراج التفاعل مع رمز PIN 2027 عند جلب النصوص
-            if 'getText()' in code or 'toString()' in code:
-                # استبدال الإدخال بالبيانات الحقيقية إذا كان المدخل هو 2027
-                new_code = re.sub(
-                    r'(String\s+([a-zA-Z0-9_]+)\s*=\s*[^;]*getText\(\)\.toString\(\)[^;]*;)',
-                    rf'\1\n        if (\2 != null && (\2.trim().equals(\"{PIN_CODE}\") || \2.trim().contains(\"{PIN_CODE}\"))) {{ \2 = \"{SERVER_URL}\"; }}',
-                    code
+        if pattern.search(tag):
+            return pattern.sub(
+                replacement,
+                tag,
+                count=1
+            )
+
+        return tag[:-1].rstrip() + replacement + ">"
+
+
+    def is_input_tag(tag):
+        return bool(
+            re.search(
+                r'<\s*(EditText|AutoCompleteTextView|'
+                r'com\.[^ >]*EditText|'
+                r'androidx\.[^ >]*EditText)',
+                tag,
+                re.IGNORECASE
+            )
+        )
+
+
+    def get_attr(tag, name):
+        match = re.search(
+            rf'android:{re.escape(name)}\s*=\s*["\']([^"\']*)["\']',
+            tag,
+            re.IGNORECASE
+        )
+
+        return match.group(1) if match else ""
+
+
+    def looks_like_server(tag):
+        text = tag.lower()
+
+        keywords = (
+            "server",
+            "serverurl",
+            "server_url",
+            "url",
+            "host",
+            "baseurl",
+            "base_url",
+            "link"
+        )
+
+        # id / hint / text / input-related attributes
+        for keyword in keywords:
+            if keyword in text:
+                return True
+
+        return False
+
+
+    def looks_like_password(tag):
+        text = tag.lower()
+
+        keywords = (
+            "password",
+            "passwd",
+            "pwd",
+            "pass"
+        )
+
+        return any(
+            keyword in text
+            for keyword in keywords
+        )
+
+
+    # =========================================================
+    # Search layouts
+    # =========================================================
+
+    if not LAYOUT_DIR.exists():
+        raise SystemExit(
+            "❌ res/layout directory not found."
+        )
+
+
+    modified_files = 0
+    server_fields = 0
+    password_fields = 0
+    activation_fields = 0
+
+
+    for xml_file in LAYOUT_DIR.rglob("*.xml"):
+
+        try:
+            text = xml_file.read_text(
+                encoding="utf-8"
+            )
+        except Exception:
+            continue
+
+
+        # -----------------------------------------------------
+        # Find XML tags containing EditText
+        # -----------------------------------------------------
+
+        pattern = re.compile(
+            r'<[^<>]*(?:EditText|AutoCompleteTextView)[^<>]*>',
+            re.IGNORECASE
+        )
+
+        changed = False
+
+
+        def process_tag(match):
+
+            nonlocal changed
+            nonlocal server_fields
+            nonlocal password_fields
+            nonlocal activation_fields
+
+            tag = match.group(0)
+
+            if not is_input_tag(tag):
+                return tag
+
+
+            # =================================================
+            # SERVER FIELD
+            # =================================================
+
+            if looks_like_server(tag):
+
+                server_fields += 1
+
+                # Hide visually
+                tag = add_or_replace_attribute(
+                    tag,
+                    "visibility",
+                    "gone"
                 )
-                if new_code != code:
-                    with open(path, 'w', encoding='utf-8') as f:
-                        f.write(new_code)
-                    print(f'Injected PIN logic to: {path}')
 
-        # 2. إصلاح الواجهة والشعار وحجم التمرير (activity_main.xml)
-        layouts = glob.glob('**/res/layout/activity_main.xml', recursive=True)
-        for path in layouts:
-            with open(path, 'r', encoding='utf-8') as f:
-                content = f.read()
+                # -------------------------------------------------
+                # IMPORTANT:
+                #
+                # If the original XML already contains android:text,
+                # preserve it.
+                #
+                # If DEFAULT_SERVER_URL is explicitly supplied,
+                # use that value.
+                # -------------------------------------------------
 
-            # تحسين إرشاد الخانة الأولى ليظهر أنه يمكن كتابة 2027
-            content = content.replace('android:hint=\"http://', 'android:hint=\"أدخل الرمز 2027 أو الرابط: http://')
-
-            # ضبط حجم اللوجو والشعار
-            if '<ImageView' in content:
-                content = re.sub(
-                    r'(<ImageView[^>]*?)(/?>)',
-                    lambda m: m.group(1) + (' android:adjustViewBounds=\"true\" android:scaleType=\"fitCenter\"' if 'scaleType' not in m.group(1) else '') + m.group(2),
-                    content
+                existing_text = get_attr(
+                    tag,
+                    "text"
                 )
 
-            # تغليف الشاشة بـ ScrollView للتمرير
-            if 'ScrollView' not in content:
-                clean_content = content.replace('<?xml version=\"1.0\" encoding=\"utf-8\"?>', '').strip()
-                content = f'''<?xml version=\"1.0\" encoding=\"utf-8\"?>
-        <ScrollView xmlns:android=\"http://schemas.android.com/apk/res/android\"
-            xmlns:app=\"http://schemas.android.com/apk/res-auto\"
-            xmlns:tools=\"http://schemas.android.com/tools\"
-            android:layout_width=\"match_parent\"
-            android:layout_height=\"match_parent\"
-            android:fillViewport=\"true\"
-            android:scrollbars=\"vertical\">
+                if DEFAULT_SERVER_URL:
+                    tag = add_or_replace_attribute(
+                        tag,
+                        "text",
+                        DEFAULT_SERVER_URL
+                    )
 
-            {clean_content}
+                    print(
+                        f"  SERVER: {xml_file} -> "
+                        f"using configured server URL"
+                    )
 
-        </ScrollView>'''
+                elif existing_text:
+                    print(
+                        f"  SERVER: {xml_file} -> "
+                        f"preserving existing value"
+                    )
 
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print(f'Updated Layout: {path}')
+                else:
+                    print(
+                        f"  SERVER: {xml_file} -> "
+                        f"hidden, but no server value injected"
+                    )
 
-        # 3. ضبط الـ Manifest لدعم الكيبورد
-        manifests = glob.glob('**/AndroidManifest.xml', recursive=True)
-        for mpath in manifests:
-            with open(mpath, 'r', encoding='utf-8') as f:
-                mcontent = f.read()
-            if 'windowSoftInputMode' not in mcontent:
-                mcontent = mcontent.replace('<activity', '<activity android:windowSoftInputMode=\"adjustResize\"', 1)
-                with open(mpath, 'w', encoding='utf-8') as f:
-                    f.write(mcontent)
-                print(f'Patched manifest: {mpath}')
-        "
+                changed = True
 
-    - name: Build Debug APK
-      run: |
-        if [ -f "./gradlew" ]; then
-          chmod +x gradlew
-          ./gradlew assembleDebug
-        else
-          gradle assembleDebug
-        fi
+                return tag
 
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: DHIQAR-TV-v4-PRO
-        path: "**/build/outputs/apk/debug/*.apk"
+
+            # =================================================
+            # PASSWORD FIELD
+            # =================================================
+
+            if looks_like_password(tag):
+
+                password_fields += 1
+
+                # Hide visually.
+                #
+                # We deliberately preserve the APK's existing
+                # value instead of injecting credentials.
+                tag = add_or_replace_attribute(
+                    tag,
+                    "visibility",
+                    "gone"
+                )
+
+                changed = True
+
+                print(
+                    f"  PASSWORD: {xml_file} -> hidden"
+                )
+
+                return tag
+
+
+            return tag
+
+
+        new_text = pattern.sub(
+            process_tag,
+            text
+        )
+
+
+        if new_text != text:
+
+            xml_file.write_text(
+                new_text,
+                encoding="utf-8"
+            )
+
+            modified_files += 1
+
+
+    # =========================================================
+    # Create a simple visible activation field
+    # =========================================================
+
+    activation_layout = (
+        LAYOUT_DIR /
+        "dhiqar_activation.xml"
+    )
+
+    activation_layout.write_text(
+        """<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="24dp">
+
+    <EditText
+        android:id="@+id/dhiqar_activation_code"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="أدخل رمز التفعيل"
+        android:text=""
+        android:singleLine="true"
+        android:inputType="text" />
+
+</LinearLayout>
+""",
+        encoding="utf-8"
+    )
+
+
+    # =========================================================
+    # Summary
+    # =========================================================
+
+    print("")
+    print("========================================")
+    print("LAYOUT MODIFICATION COMPLETE")
+    print("========================================")
+    print(f"Modified XML files : {modified_files}")
+    print(f"Server fields      : {server_fields}")
+    print(f"Password fields    : {password_fields}")
+    print(f"Activation layout   : {activation_layout}")
+    print("========================================")
+    PY
