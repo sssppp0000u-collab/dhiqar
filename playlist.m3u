@@ -1,0 +1,96 @@
+package com.dhiqartv.app; // تأكد فقط إن هذا السطر يطابق اسم الحزمة (Package) بمشروعك
+
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.os.Bundle;
+import android.os.Handler;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.animation.AlphaAnimation;
+import android.widget.ImageView;
+import android.widget.ProgressBar;
+import android.widget.RelativeLayout;
+import android.widget.TextView;
+import androidx.appcompat.app.AppCompatActivity;
+
+public class SplashActivity extends AppCompatActivity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        // ==========================================
+        // 1. تصميم الواجهة الاحترافية من داخل الكود (بدون ملفات XML)
+        // ==========================================
+        RelativeLayout layout = new RelativeLayout(this);
+        layout.setLayoutParams(new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        
+        // جلب صورة الخلفية الفخمة
+        int bgId = getResources().getIdentifier("splash_bg", "drawable", getPackageName());
+        if(bgId != 0) { layout.setBackgroundResource(bgId); } 
+        else { layout.setBackgroundColor(Color.parseColor("#000000")); } // خلفية سوداء احتياطية
+
+        // إضافة الأيقونة الخاصة بك (2027)
+        ImageView logo = new ImageView(this);
+        logo.setId(View.generateViewId());
+        int logoId = getResources().getIdentifier("logo_2027", "drawable", getPackageName());
+        if(logoId != 0) logo.setImageResource(logoId);
+        RelativeLayout.LayoutParams logoParams = new RelativeLayout.LayoutParams(600, 600);
+        logoParams.addRule(RelativeLayout.CENTER_IN_PARENT);
+        logo.setLayoutParams(logoParams);
+        layout.addView(logo);
+
+        // إضافة شريط تحميل ذهبي
+        ProgressBar progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progressBar.setId(View.generateViewId());
+        progressBar.setIndeterminate(true);
+        RelativeLayout.LayoutParams progressParams = new RelativeLayout.LayoutParams(400, ViewGroup.LayoutParams.WRAP_CONTENT);
+        progressParams.addRule(RelativeLayout.BELOW, logo.getId());
+        progressParams.addRule(RelativeLayout.CENTER_HORIZONTAL);
+        progressParams.setMargins(0, 50, 0, 0);
+        progressBar.setLayoutParams(progressParams);
+        layout.addView(progressBar);
+
+        // إضافة النص المتحرك
+        TextView loadingText = new TextView(this);
+        loadingText.setText("جاري تحميل قنوات ذي قار 2027...");
+        loadingText.setTextColor(Color.WHITE);
+        loadingText.setTextSize(16);
+        loadingText.setGravity(Gravity.CENTER);
+        RelativeLayout.LayoutParams textParams = new RelativeLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        textParams.addRule(RelativeLayout.BELOW, progressBar.getId());
+        textParams.addRule(RelativeLayout.CENTER_HORIZONTAL);
+        textParams.setMargins(0, 20, 0, 0);
+        loadingText.setLayoutParams(textParams);
+        layout.addView(loadingText);
+
+        setContentView(layout);
+
+        // تأثير الظهور التدريجي الفخم (Fade In)
+        AlphaAnimation fadeIn = new AlphaAnimation(0.0f, 1.0f);
+        fadeIn.setDuration(2000); // ثانيتين للحركة
+        layout.startAnimation(fadeIn);
+
+        // ==========================================
+        // 2. زرع اشتراكك (Xtream) تلقائياً لتخطي تسجيل الدخول
+        // ==========================================
+        SharedPreferences sharedPreferences = getSharedPreferences("IPTV_PREFS", MODE_PRIVATE);
+        SharedPreferences.Editor editor = sharedPreferences.edit();
+        editor.putString("server_url", "http://a83967.xyz:8080");
+        editor.putString("username", "106253449142");
+        editor.putString("password", "510546558453");
+        editor.putBoolean("is_logged_in", true);
+        editor.apply();
+
+        // ==========================================
+        // 3. الانتقال السريع للقنوات بعد العرض (3 ثواني)
+        // ==========================================
+        new Handler().postDelayed(() -> {
+            Intent intent = new Intent(SplashActivity.this, MainActivity.class); // إذا كانت صفحة القنوات باسم مختلف، فقط بدّل كلمة MainActivity
+            startActivity(intent);
+            finish(); // إنهاء شاشة البدء
+        }, 3000);
+    }
+}
